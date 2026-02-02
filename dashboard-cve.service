@@ -1,0 +1,16 @@
+[Unit]
+Description=CVE Dashboard Streamlit Service
+After=network.target
+
+[Service]
+# Ganti user sesuai user di linux kamu
+User=thkibana2
+# Ganti path sesuai lokasi folder project kamu
+WorkingDirectory=/home/thkibana2/dashboard-cve
+# Path ke streamlit di dalam venv
+ExecStart=/home/thkibana2/dashboard-cve/venv/bin/streamlit run app.py --server.port 8501 --server.address 0.0.0.0
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
