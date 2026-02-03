@@ -305,55 +305,59 @@ if error_msg:
 
 
 
-# --- Top Banner: Daily Intelligence ---
-st.markdown("### 📅 Today's Intelligence")
-m1, m2, m3, m4 = st.columns(4)
-
-with m1:
-    st.metric("New Published Today", f"{new_today}", delta="New", delta_color="inverse")
-    if st.button("🔍 Filter New", key="btn_new_today", use_container_width=True):
-        set_daily_filter("new")
-        st.rerun()
-
-with m2:
-    st.metric("Updated Today", f"{mod_today}", delta="Active")
-    if st.button("🔍 Filter Updated", key="btn_mod_today", use_container_width=True):
-        set_daily_filter("updated")
-        st.rerun()
-
-with m3:
-    st.metric("Cluster Status", "HEALTHY", delta="Connected", delta_color="normal")
-with m4:
+# --- New Top Bar ---
+c_top1, c_top2 = st.columns([3, 1])
+with c_top1:
+    st.markdown("### 📅 Today's Intelligence")
+with c_top2:
     current_mode = f"{filter_mode}" if filter_mode == "All Time" else f"{selected_date}"
-    st.metric("Viewing Context", current_mode)
+    st.markdown(
+        f"""
+        <div style="text-align: right; background-color: #262730; padding: 5px 10px; border-radius: 5px; border: 1px solid #464B5C;">
+            <small style="color: #A3A8B8;">Context:</small> <strong>{current_mode}</strong>
+        </div>
+        """, 
+        unsafe_allow_html=True
+    )
 
-st.markdown("---")
+# --- Metrics Grid ---
+if stats_aggs:
+    # Extract counts from aggregations
+    sev_buckets = {b['key']: b['doc_count'] for b in stats_aggs['severity_counts']['buckets']}
+    cnt_crit = sev_buckets.get('CRITICAL', 0)
+    cnt_high = sev_buckets.get('HIGH', 0)
+    cnt_med = sev_buckets.get('MEDIUM', 0)
+    cnt_low = sev_buckets.get('LOW', 0)
+    
+    cnt_kev = stats_aggs.get('kev_count', {}).get('doc_count', 0)
+    cnt_vendors = stats_aggs.get('unique_vendors', {}).get('value', 0)
+    cnt_products = stats_aggs.get('unique_products', {}).get('value', 0)
+else:
+    cnt_crit = cnt_high = cnt_med = cnt_low = cnt_kev = cnt_vendors = cnt_products = 0
 
-# --- KPI Metrics (Filtered Context) ---
-st.markdown(f"### 📊 Analysis Context: {filter_mode}")
+# Row 1: Severities & Total
+m1, m2, m3, m4 = st.columns(4)
+with m1:
+    st.metric("CRITICAL", f"{cnt_crit:,}", help="Vulnerabilities with CRITICAL severity")
+with m2:
+    st.metric("HIGH", f"{cnt_high:,}", help="Vulnerabilities with HIGH severity")
+with m3:
+    st.metric("MEDIUM", f"{cnt_med:,}", help="Vulnerabilities with MEDIUM severity")
+with m4:
+    st.metric("LOW", f"{cnt_low:,}", help="Vulnerabilities with LOW severity")
 
-col1, col2, col3, col4 = st.columns(4)
-
-with col1:
-    st.metric("Total CVEs Filtered", f"{total_cves:,}")
-
-with col2:
-    if not df_cves.empty and 'score' in df_cves.columns:
-        avg_score = df_cves['score'].mean()
-        st.metric("Avg CVSS Score", f"{avg_score:.2f}")
-    else:
-        st.metric("Avg CVSS Score", "0")
-
-with col3:
-    if not df_cves.empty and 'sev' in df_cves.columns:
-        high_critical = df_cves[df_cves['sev'].isin(['HIGH', 'CRITICAL'])].shape[0]
-        st.metric("High/Critical Risk", f"{high_critical}")
-    else:
-        st.metric("High/Critical Risk", "0")
-
-with col4:
-    label = "Publication Year" if date_field == "published" else "Modification Year"
-    st.metric("Timeline Base", label)
+# Row 2: Intelligence & Scope
+m5, m6, m7, m8 = st.columns(4)
+with m5:
+    st.metric("KEV Exploited", f"{cnt_kev:,}", help="Known Exploited Vulnerabilities (CISA)")
+with m6:
+    st.metric("Affected Vendors", f"{cnt_vendors:,}", help="Unique Vendors impacted")
+with m7:
+    st.metric("Affected Products", f"{cnt_products:,}", help="Unique Products impacted")
+with m8:
+    # Today's updates metrics in one card or split? User asked for New/Updated checks.
+    # We display the main Total here as a summary.
+    st.metric("Total Filtered", f"{total_cves:,}")
 
 st.markdown("---")
 
@@ -475,9 +479,9 @@ if stats_aggs:
                 )
                 st.plotly_chart(fig_hist, use_container_width=True, theme=None)
     
-    # Tab 2: Rankings
+    # Tab 2: Rankings (With Weaknesses added)
     with tab2:
-        c_r1, c_r2, c_r3 = st.columns(3)
+        c_r1, c_r2 = st.columns(2)
         
         with c_r1:
             st.subheader("Top 5 Vendors")
@@ -522,9 +526,8 @@ if stats_aggs:
                         margin=dict(t=10, b=10, l=10, r=10)
                     )
                     st.plotly_chart(fig_p, use_container_width=True, theme=None)
-                else:
-                    st.info("No product data.")
-                    
+        
+        c_r3, c_r4 = st.columns(2)
         with c_r3:
             st.subheader("Status Breakdown")
             if 'vuln_status_counts' in stats_aggs:
@@ -533,7 +536,8 @@ if stats_aggs:
                     df_s = pd.DataFrame(s_buckets)
                     fig_s = px.pie(
                         df_s, values='doc_count', names='key',
-                        color_discrete_sequence=px.colors.sequential.RdBu
+                        color_discrete_sequence=px.colors.sequential.RdBu,
+                        hole=0.4
                     )
                     fig_s.update_layout(
                         template="plotly_dark",
@@ -545,6 +549,29 @@ if stats_aggs:
                     st.plotly_chart(fig_s, use_container_width=True, theme=None)
                 else:
                     st.info("No status data.")
+        
+        with c_r4:
+            st.subheader("Top 5 Weaknesses (CWE)")
+            if 'top_weaknesses' in stats_aggs:
+                w_buckets = stats_aggs['top_weaknesses']['buckets']
+                if w_buckets:
+                    df_w = pd.DataFrame(w_buckets)
+                    fig_w = px.bar(
+                        df_w, x='doc_count', y='key', orientation='h',
+                        labels={'doc_count': 'Count', 'key': 'CWE'},
+                        text='doc_count'
+                    )
+                    fig_w.update_traces(marker_color='#FFA500', textposition='outside')
+                    fig_w.update_layout(
+                        template="plotly_dark",
+                        yaxis={'categoryorder':'total ascending'},
+                        plot_bgcolor='rgba(0,0,0,0)',
+                        paper_bgcolor='#262730',
+                        margin=dict(t=10, b=10, l=10, r=10)
+                    )
+                    st.plotly_chart(fig_w, use_container_width=True, theme=None)
+                else:
+                    st.info("No weakness data.")
 
     # Function to parse nested timeline buckets
     def parse_nested_timeline(agg_data):

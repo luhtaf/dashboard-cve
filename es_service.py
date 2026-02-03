@@ -211,6 +211,18 @@ def fetch_summary_stats(index_pattern="list-cve-*", date_field="published", sear
             },
             "vuln_status_counts": {
                 "terms": {"field": "vulnStatus.keyword", "size": 10}
+            },
+            "top_weaknesses": {
+                "terms": {"field": "original.weaknesses.description.value.keyword", "size": 5}
+            },
+            "unique_vendors": {
+                "cardinality": {"field": "vendors.keyword"}
+            },
+            "unique_products": {
+                "cardinality": {"field": "products.keyword"}
+            },
+            "kev_count": {
+                "filter": {"term": {"hasCisa": True}}
             }
         }
     }
