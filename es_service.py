@@ -59,7 +59,11 @@ def _build_bool_query(search_text=None, severity_filter=None, date_filter=None, 
         
         if isinstance(date_filter, (list, tuple)):
             start_date = str(date_filter[0]).split(' ')[0]
-            end_date = str(date_filter[1]).split(' ')[0]
+            # Handle case where date_filter might be (start_date,) during selection
+            if len(date_filter) > 1:
+                end_date = str(date_filter[1]).split(' ')[0]
+            else:
+                end_date = start_date
         else:
             start_date = str(date_filter).split(' ')[0]
             end_date = start_date

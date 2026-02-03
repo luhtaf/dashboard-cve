@@ -114,6 +114,7 @@ with st.sidebar:
             key="cve_status_type"
         )
         date_field = "published" if "New" in cve_status_type else "lastModified"
+        date_field = "published" if "New" in cve_status_type else "lastModified"
         
     st.markdown("---")
     
@@ -299,7 +300,7 @@ df_cves, total_cves, error_msg = load_data(
     selected_year, 
     search_term, 
     st.session_state.severity_filter, 
-    selected_date if st.session_state.filter_mode == "Specific Date" else None, 
+    selected_date if st.session_state.filter_mode != "All Time" else None, 
     date_field,
     st.session_state.score_range,
     st.session_state.kev_filter,
@@ -315,7 +316,7 @@ stats_aggs, stats_error = load_stats(
     date_field,
     search_term,
     st.session_state.severity_filter,
-    selected_date if st.session_state.filter_mode == "Specific Date" else None,
+    selected_date if st.session_state.filter_mode != "All Time" else None,
     st.session_state.score_range,
     st.session_state.kev_filter,
     st.session_state.epss_range,
