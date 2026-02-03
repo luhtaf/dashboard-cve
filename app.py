@@ -74,6 +74,8 @@ if 'product_filter' not in st.session_state:
     st.session_state.product_filter = ""
 if 'vendor_filter' not in st.session_state:
     st.session_state.vendor_filter = ""
+if 'cvss_version_filter' not in st.session_state:
+    st.session_state.cvss_version_filter = []
 
 # --- Sidebar ---
 with st.sidebar:
