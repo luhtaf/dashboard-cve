@@ -3,14 +3,20 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import importlib
+from PIL import Image
 import es_service
 importlib.reload(es_service)
 from es_service import fetch_cve_data, fetch_summary_stats
 
 # --- Page Config ---
+try:
+    favicon = Image.open("logo_bssn.png")
+except:
+    favicon = "🛡️"
+
 st.set_page_config(
     page_title="CVE Intelligence Dashboard",
-    page_icon="🛡️",
+    page_icon=favicon,
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -22,6 +28,13 @@ st.markdown("""
     .stApp {
         background-color: #0E1117;
     }
+    
+    /* Reduce top padding for dashboard feel */
+    .block-container {
+        padding-top: 2rem;
+        margin-top: -1rem;
+    }
+    
     h1, h2, h3 {
         color: #FFFFFF;
         font-family: 'Inter', sans-serif;
@@ -79,7 +92,26 @@ if 'cvss_version_filter' not in st.session_state:
 
 # --- Sidebar ---
 with st.sidebar:
-    st.title("🛡️ CVE Explorer")
+    # Centers the logo and title
+    c_logo, c_space = st.columns([1, 0.1])
+    with c_logo:
+        try:
+            logo = Image.open("logo_bssn.png")
+            # Use columns to roughly center or just full width
+            col1, col2, col3 = st.columns([1, 2, 1])
+            with col2:
+                st.image(logo, width=100)
+        except:
+            pass
+    
+    st.markdown(
+        """
+        <div style="text-align: center; margin-bottom: 20px;">
+            <h2 style="margin:0; padding:0; font-size: 1.5em;">CVE Explorer</h2>
+            <p style="margin:0; padding:0; color: #A3A8B8; font-size: 0.9em;">Badan Siber dan Sandi Negara</p>
+        </div>
+        """, unsafe_allow_html=True
+    )
     st.markdown("---")
     
     st.subheader("Filter Configurations")
@@ -113,7 +145,7 @@ with st.sidebar:
             index=0 if st.session_state.cve_status_type == "Published (New)" else 1,
             key="cve_status_type"
         )
-        date_field = "published" if "New" in cve_status_type else "lastModified"
+        # Restore logic: Published vs Modified
         date_field = "published" if "New" in cve_status_type else "lastModified"
         
     st.markdown("---")
@@ -292,8 +324,35 @@ def load_today_metrics():
 
 # --- Main Content ---
 
-st.title("🛡️ Vulnerability Intelligence Center")
-st.markdown("Real-time dashboard for Common Vulnerabilities and Exposures (CVE).")
+# Compact Header with Context
+c_header, c_ctx = st.columns([3, 1])
+with c_header:
+    st.title("Vulnerability Intelligence Center")
+    st.caption("Real-time operational dashboard for CVE tracking and analysis.")
+
+with c_ctx:
+    if filter_mode == "All Time":
+        current_mode = "All Time"
+    elif filter_mode == "Specific Date":
+        current_mode = f"{selected_date}"
+    else:
+        try:
+             current_mode = f"{selected_date[0]} to {selected_date[1]}"
+        except:
+             current_mode = "Date Range"
+
+    st.markdown(
+        f"""
+        <div style="text-align: right; margin-top: 10px;">
+            <span style="background-color: #262730; padding: 5px 12px; border-radius: 4px; border: 1px solid #464B5C; font-size: 0.9em; color: #E0E0E0;">
+                Context: <strong>{current_mode}</strong>
+            </span>
+        </div>
+        """, 
+        unsafe_allow_html=True
+    )
+
+st.divider()
 
 # Load Main Data
 df_cves, total_cves, error_msg = load_data(
@@ -331,36 +390,9 @@ if error_msg:
     st.stop()
 
 
-
-# --- New Top Bar ---
-c_top1, c_top2 = st.columns([3, 1])
-with c_top1:
-    st.markdown("### 📅 Today's Intelligence")
-with c_top2:
-    if filter_mode == "All Time":
-        current_mode = "All Time"
-    elif filter_mode == "Specific Date":
-        current_mode = f"{selected_date}"
-    else:
-        # Date Range
-        try:
-             current_mode = f"{selected_date[0]} to {selected_date[1]}"
-        except:
-             current_mode = "Date Range"
-
-    st.markdown(
-        f"""
-        <div style="text-align: right; background-color: #262730; padding: 5px 10px; border-radius: 5px; border: 1px solid #464B5C;">
-            <small style="color: #A3A8B8;">Context:</small> <strong>{current_mode}</strong>
-        </div>
-        """, 
-        unsafe_allow_html=True
-    )
-
-
 # --- Metrics Grid ---
 if stats_aggs:
-    # Extract counts from aggregations
+    # Extract counts
     sev_buckets = {b['key']: b['doc_count'] for b in stats_aggs['severity_counts']['buckets']}
     cnt_crit = sev_buckets.get('CRITICAL', 0)
     cnt_high = sev_buckets.get('HIGH', 0)
@@ -370,32 +402,98 @@ if stats_aggs:
     cnt_kev = stats_aggs.get('kev_count', {}).get('doc_count', 0)
     cnt_vendors = stats_aggs.get('unique_vendors', {}).get('value', 0)
     cnt_products = stats_aggs.get('unique_products', {}).get('value', 0)
+    
+    # Process Sparkline Data
+    # Default empty
+    spark_data = {
+        'CRITICAL': [0]*10,
+        'HIGH': [0]*10,
+        'MEDIUM': [0]*10,
+        'LOW': [0]*10
+    }
+    
+    if 'severity_over_time' in stats_aggs:
+        for bucket in stats_aggs['severity_over_time']['buckets']:
+            sev_key = bucket['key']
+            # Get historical counts
+            # We take the last 12 points for the sparkline to show "recent" trend
+            history = [h['doc_count'] for h in bucket['history']['buckets']]
+            
+            # Use last N points 
+            if len(history) > 15:
+                history = history[-15:]
+            elif len(history) < 2:
+                 # Minimal padding for visual
+                 history = [0]*(5) + history
+            
+            spark_data[sev_key] = history
+            
 else:
     cnt_crit = cnt_high = cnt_med = cnt_low = cnt_kev = cnt_vendors = cnt_products = 0
+    spark_data = {k: [0]*10 for k in ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW']}
 
-# Row 1: Severities & Total
-m1, m2, m3, m4 = st.columns(4)
-with m1:
-    st.metric("CRITICAL", f"{cnt_crit:,}", help="Vulnerabilities with CRITICAL severity")
-with m2:
-    st.metric("HIGH", f"{cnt_high:,}", help="Vulnerabilities with HIGH severity")
-with m3:
-    st.metric("MEDIUM", f"{cnt_med:,}", help="Vulnerabilities with MEDIUM severity")
-with m4:
-    st.metric("LOW", f"{cnt_low:,}", help="Vulnerabilities with LOW severity")
+# Helper to generate sparkline data (mock trend)
+import plotly.graph_objects as go
 
-# Row 2: Intelligence & Scope
-m5, m6, m7, m8 = st.columns(4)
-with m5:
-    st.metric("KEV Exploited", f"{cnt_kev:,}", help="Known Exploited Vulnerabilities (CISA)")
-with m6:
-    st.metric("Affected Vendors", f"{cnt_vendors:,}", help="Unique Vendors impacted")
-with m7:
-    st.metric("Affected Products", f"{cnt_products:,}", help="Unique Products impacted")
-with m8:
-    # Today's updates metrics in one card or split? User asked for New/Updated checks.
-    # We display the main Total here as a summary.
-    st.metric("Total Filtered", f"{total_cves:,}")
+def make_sparkline(data, color):
+    # Ensure data is a list
+    if not isinstance(data, list):
+         data = [0]*10
+    
+    # Parse hex color manually
+    c = color.lstrip('#')
+    rgb = tuple(int(c[i:i+2], 16) for i in (0, 2, 4))
+    
+    fig = go.Figure(data=go.Scatter(
+        y=data, 
+        mode='lines', 
+        fill='tozeroy',
+        line=dict(color=color, width=2),
+        fillcolor=f'rgba({rgb[0]}, {rgb[1]}, {rgb[2]}, 0.2)'
+    ))
+    fig.update_layout(
+        template='plotly_dark',
+        showlegend=False,
+        plot_bgcolor='rgba(0,0,0,0)',
+        paper_bgcolor='rgba(0,0,0,0)',
+        margin=dict(t=0, b=0, l=0, r=0),
+        height=40,
+        xaxis=dict(visible=False, fixedrange=True),
+        yaxis=dict(visible=False, fixedrange=True)
+    )
+    return fig
+
+# Row 1: Severity Levels
+st.subheader("Severity Overview")
+r1_c1, r1_c2, r1_c3, r1_c4 = st.columns(4)
+
+with r1_c1:
+    st.metric("CRITICAL", f"{cnt_crit:,}")
+    st.plotly_chart(make_sparkline(spark_data.get('CRITICAL', [0]), "#FF2B2B"), use_container_width=True, config={'displayModeBar': False})
+with r1_c2:
+    st.metric("HIGH", f"{cnt_high:,}")
+    st.plotly_chart(make_sparkline(spark_data.get('HIGH', [0]), "#FF9800"), use_container_width=True, config={'displayModeBar': False})
+with r1_c3:
+    st.metric("MEDIUM", f"{cnt_med:,}")
+    st.plotly_chart(make_sparkline(spark_data.get('MEDIUM', [0]), "#FFEB3B"), use_container_width=True, config={'displayModeBar': False})
+with r1_c4:
+    st.metric("LOW", f"{cnt_low:,}")
+    st.plotly_chart(make_sparkline(spark_data.get('LOW', [0]), "#00E676"), use_container_width=True, config={'displayModeBar': False})
+
+# Row 2: Impact & Scope
+st.subheader("Impact & Scope")
+r2_c1, r2_c2, r2_c3, r2_c4 = st.columns(4)
+
+with r2_c1:
+    st.metric("KEV Exploited", f"{cnt_kev:,}", help="Known Exploited Vulnerabilities")
+with r2_c2:
+    st.metric("Affected Vendors", f"{cnt_vendors:,}")
+with r2_c3:
+    st.metric("Affected Products", f"{cnt_products:,}")
+with r2_c4:
+    st.metric("Total Filtered", f"{total_cves:,}", help="Total records matching filters")
+
+st.markdown("---")
 
 st.markdown("---")
 

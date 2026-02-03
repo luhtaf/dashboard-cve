@@ -183,12 +183,49 @@ def fetch_summary_stats(index_pattern="list-cve-*", date_field="published", sear
         score_range, kev_filter, epss_range, vendor_filter, product_filter, cvss_version_filter
     )
     
+    # Determine sensible interval for sparklines/trends
+    interval = "year"
+    if date_filter:
+        try:
+            # Check if range
+            if isinstance(date_filter, (list, tuple)) and len(date_filter) > 1:
+                 # Check delta
+                 d1 = pd.to_datetime(str(date_filter[0]))
+                 d2 = pd.to_datetime(str(date_filter[1]))
+                 delta_days = (d2 - d1).days
+                 
+                 if delta_days > 730: # > 2 years
+                     interval = "year"
+                 elif delta_days > 60: # > 2 months
+                     interval = "month"
+                 elif delta_days > 14: # > 2 weeks
+                     interval = "week"
+                 else:
+                     interval = "day"
+            elif isinstance(date_filter, (str,  pd.Timestamp, type(pd.to_datetime("today").date()))):
+                 # Single day selected?
+                 interval = "hour"
+        except:
+            interval = "year"
+
     aggs_query = {
         "size": 0,
         "query": query, # Apply filters to aggregation
         "aggs": {
             "severity_counts": {
                 "terms": {"field": "sev.keyword", "size": 10}
+            },
+            "severity_over_time": {
+                "terms": {"field": "sev.keyword", "size": 5},
+                "aggs": {
+                    "history": {
+                        "date_histogram": {
+                            "field": date_field,
+                            "calendar_interval": interval, 
+                            "min_doc_count": 0
+                        }
+                    }
+                }
             },
             "score_histogram": {
                 "histogram": {"field": "score", "interval": 1}
