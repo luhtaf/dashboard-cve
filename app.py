@@ -93,14 +93,12 @@ if 'cvss_version_filter' not in st.session_state:
 # --- Sidebar ---
 with st.sidebar:
     # Centers the logo and title
-    c_logo, c_space = st.columns([1, 0.1])
-    with c_logo:
+    # Center the logo cleanly
+    col_center = st.columns([1, 2, 1])
+    with col_center[1]:
         try:
             logo = Image.open("logo_bssn.png")
-            # Use columns to roughly center or just full width
-            col1, col2, col3 = st.columns([1, 2, 1])
-            with col2:
-                st.image(logo, width=100)
+            st.image(logo, width=110)
         except:
             pass
     
@@ -331,21 +329,24 @@ with c_header:
     st.caption("Real-time operational dashboard for CVE tracking and analysis.")
 
 with c_ctx:
-    if filter_mode == "All Time":
-        current_mode = "All Time"
-    elif filter_mode == "Specific Date":
-        current_mode = f"{selected_date}"
-    else:
-        try:
-             current_mode = f"{selected_date[0]} to {selected_date[1]}"
-        except:
-             current_mode = "Date Range"
+    mode = st.session_state.filter_mode
+    context_str = "All Time"
+    
+    if mode == "Specific Date":
+        context_str = str(st.session_state.selected_date)
+    elif mode == "Date Range":
+        # Handle tuple safely
+        d_val = selected_date # This is the local variable from sidebar which is a tuple
+        if isinstance(d_val, tuple) and len(d_val) > 1:
+             context_str = f"{d_val[0]} to {d_val[1]}"
+        else:
+             context_str = "Custom Range"
 
     st.markdown(
         f"""
         <div style="text-align: right; margin-top: 10px;">
             <span style="background-color: #262730; padding: 5px 12px; border-radius: 4px; border: 1px solid #464B5C; font-size: 0.9em; color: #E0E0E0;">
-                Context: <strong>{current_mode}</strong>
+                Context: <strong>{context_str}</strong>
             </span>
         </div>
         """, 
