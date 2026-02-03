@@ -85,18 +85,28 @@ with st.sidebar:
     st.subheader("Filter Configurations")
     
     # Mode Selection (Simplified)
+    # Mode Selection (Simplified)
     filter_mode = st.radio(
         "Observation Mode",
-        ["All Time", "Specific Date"],
-        index=0 if st.session_state.filter_mode == "All Time" else 1,
+        ["All Time", "Specific Date", "Date Range"],
+        index=0 if st.session_state.filter_mode == "All Time" else (1 if st.session_state.filter_mode == "Specific Date" else 2),
         key="filter_mode"
     )
     
     selected_date = None
     date_field = "published" # Default
     
-    if st.session_state.filter_mode == "Specific Date":
-        selected_date = st.date_input("Select Date", st.session_state.selected_date, key="selected_date")
+    if st.session_state.filter_mode != "All Time":
+        if st.session_state.filter_mode == "Specific Date":
+             selected_date = st.date_input("Select Date", st.session_state.selected_date, key="selected_date")
+        else: # Date Range
+             d_col1, d_col2 = st.columns(2)
+             with d_col1:
+                 start_d = st.date_input("Start Date", pd.to_datetime("today").date() - pd.Timedelta(days=7), key="start_date_range")
+             with d_col2:
+                 end_d = st.date_input("End Date", pd.to_datetime("today").date(), key="end_date_range")
+             selected_date = (start_d, end_d)
+
         cve_status_type = st.radio(
             "CVE Status Type",
             ["Published (New)", "Modified (Updated)"],
@@ -326,7 +336,17 @@ c_top1, c_top2 = st.columns([3, 1])
 with c_top1:
     st.markdown("### 📅 Today's Intelligence")
 with c_top2:
-    current_mode = f"{filter_mode}" if filter_mode == "All Time" else f"{selected_date}"
+    if filter_mode == "All Time":
+        current_mode = "All Time"
+    elif filter_mode == "Specific Date":
+        current_mode = f"{selected_date}"
+    else:
+        # Date Range
+        try:
+             current_mode = f"{selected_date[0]} to {selected_date[1]}"
+        except:
+             current_mode = "Date Range"
+
     st.markdown(
         f"""
         <div style="text-align: right; background-color: #262730; padding: 5px 10px; border-radius: 5px; border: 1px solid #464B5C;">
@@ -335,6 +355,7 @@ with c_top2:
         """, 
         unsafe_allow_html=True
     )
+
 
 # --- Metrics Grid ---
 if stats_aggs:
