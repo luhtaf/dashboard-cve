@@ -479,10 +479,11 @@ if stats_aggs:
                 )
                 st.plotly_chart(fig_hist, use_container_width=True, theme=None)
     
-    # Tab 2: Rankings (With Weaknesses added)
+    # Tab 2: Rankings (With Interactive Filtering)
     with tab2:
         c_r1, c_r2 = st.columns(2)
         
+        # --- Top Vendors Chart ---
         with c_r1:
             st.subheader("Top 5 Vendors")
             if 'top_vendors' in stats_aggs:
@@ -502,10 +503,25 @@ if stats_aggs:
                         paper_bgcolor='#262730',
                         margin=dict(t=10, b=10, l=10, r=10)
                     )
-                    st.plotly_chart(fig_v, use_container_width=True, theme=None)
+                    
+                    # Interactive Vendor Click
+                    event_v = st.plotly_chart(fig_v, use_container_width=True, theme=None, on_select="rerun", selection_mode="points")
+                    if event_v and event_v["selection"]["points"]:
+                        try:
+                            v_idx = event_v["selection"]["points"][0]["point_index"]
+                            selected_vendor = df_v.iloc[v_idx]['key']
+                            # Toggle logic: if same vendor selected, clear it
+                            if st.session_state.vendor_filter == selected_vendor:
+                                st.session_state.vendor_filter = ""
+                            else:
+                                st.session_state.vendor_filter = selected_vendor
+                            st.rerun()
+                        except:
+                            pass
                 else:
                     st.info("No vendor data.")
         
+        # --- Top Products Chart ---
         with c_r2:
             st.subheader("Top 5 Products")
             if 'top_products' in stats_aggs:
@@ -525,9 +541,26 @@ if stats_aggs:
                         paper_bgcolor='#262730',
                         margin=dict(t=10, b=10, l=10, r=10)
                     )
-                    st.plotly_chart(fig_p, use_container_width=True, theme=None)
+                    
+                    # Interactive Product Click
+                    event_p = st.plotly_chart(fig_p, use_container_width=True, theme=None, on_select="rerun", selection_mode="points")
+                    if event_p and event_p["selection"]["points"]:
+                         try:
+                            p_idx = event_p["selection"]["points"][0]["point_index"]
+                            selected_product = df_p.iloc[p_idx]['key']
+                            if st.session_state.product_filter == selected_product:
+                                st.session_state.product_filter = ""
+                            else:
+                                st.session_state.product_filter = selected_product
+                            st.rerun()
+                         except:
+                            pass
+                else:
+                    st.info("No product data.")
         
         c_r3, c_r4 = st.columns(2)
+        
+        # --- Status Breakdown Chart ---
         with c_r3:
             st.subheader("Status Breakdown")
             if 'vuln_status_counts' in stats_aggs:
@@ -550,6 +583,7 @@ if stats_aggs:
                 else:
                     st.info("No status data.")
         
+        # --- Weaknesses Chart ---
         with c_r4:
             st.subheader("Top 5 Weaknesses (CWE)")
             if 'top_weaknesses' in stats_aggs:
@@ -569,7 +603,21 @@ if stats_aggs:
                         paper_bgcolor='#262730',
                         margin=dict(t=10, b=10, l=10, r=10)
                     )
-                    st.plotly_chart(fig_w, use_container_width=True, theme=None)
+                    
+                    # Interactive Weakness Search (Sets text search)
+                    event_w = st.plotly_chart(fig_w, use_container_width=True, theme=None, on_select="rerun", selection_mode="points")
+                    if event_w and event_w["selection"]["points"]:
+                        try:
+                            w_idx = event_w["selection"]["points"][0]["point_index"]
+                            selected_weakness = df_w.iloc[w_idx]['key']
+                            # Appends to main search
+                            if st.session_state.main_search == selected_weakness:
+                                st.session_state.main_search = ""
+                            else:
+                                st.session_state.main_search = selected_weakness
+                            st.rerun()
+                        except:
+                            pass
                 else:
                     st.info("No weakness data.")
 
