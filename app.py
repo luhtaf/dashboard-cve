@@ -634,8 +634,8 @@ if stats_aggs:
                 })
         return pd.DataFrame(rows)
 
-    # Tab 2: Vendor Visuals
-    with tab2:
+    # Tab 3: Vendor Trends (Line Chart)
+    with tab3:
         st.subheader("Top 5 Vendors Over Time")
         if 'top_vendors' in stats_aggs:
             df_vendor = parse_nested_timeline(stats_aggs['top_vendors'])
@@ -662,8 +662,8 @@ if stats_aggs:
         else:
              st.info("Stats not loaded (agg missing).")
 
-    # Tab 3: Product Visuals
-    with tab3:
+    # Tab 4: Product Trends (Line Chart)
+    with tab4:
         st.subheader("Top 5 Products Over Time")
         if 'top_products' in stats_aggs:
             df_prod = parse_nested_timeline(stats_aggs['top_products'])
