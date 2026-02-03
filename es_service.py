@@ -199,8 +199,18 @@ def fetch_summary_stats(index_pattern="list-cve-*", date_field="published", sear
                             "calendar_interval": "year",
                             "format": "yyyy"
                         }
+                "aggs": {
+                    "history": {
+                        "date_histogram": {
+                            "field": date_field,
+                            "calendar_interval": "year",
+                            "format": "yyyy"
+                        }
                     }
                 }
+            },
+            "vuln_status_counts": {
+                "terms": {"field": "vulnStatus.keyword", "size": 10}
             }
         }
     }

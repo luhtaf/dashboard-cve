@@ -361,7 +361,7 @@ st.markdown("---")
 st.markdown("### 📈 Visual Analytics")
 
 if stats_aggs:
-    tab1, tab2, tab3 = st.tabs(["Overview", "Vendor Trends", "Product Trends"])
+    tab1, tab2, tab3, tab4 = st.tabs(["Overview", "Rankings", "Vendor Trends", "Product Trends"])
     
     # Tab 1: Original Overview
     with tab1:
@@ -475,6 +475,77 @@ if stats_aggs:
                 )
                 st.plotly_chart(fig_hist, use_container_width=True, theme=None)
     
+    # Tab 2: Rankings
+    with tab2:
+        c_r1, c_r2, c_r3 = st.columns(3)
+        
+        with c_r1:
+            st.subheader("Top 5 Vendors")
+            if 'top_vendors' in stats_aggs:
+                v_buckets = stats_aggs['top_vendors']['buckets']
+                if v_buckets:
+                    df_v = pd.DataFrame(v_buckets)
+                    fig_v = px.bar(
+                        df_v, x='doc_count', y='key', orientation='h',
+                        labels={'doc_count': 'Count', 'key': 'Vendor'},
+                        text='doc_count'
+                    )
+                    fig_v.update_traces(marker_color='#00D4FF', textposition='outside')
+                    fig_v.update_layout(
+                        template="plotly_dark",
+                        yaxis={'categoryorder':'total ascending'},
+                        plot_bgcolor='rgba(0,0,0,0)',
+                        paper_bgcolor='#262730',
+                        margin=dict(t=10, b=10, l=10, r=10)
+                    )
+                    st.plotly_chart(fig_v, use_container_width=True, theme=None)
+                else:
+                    st.info("No vendor data.")
+        
+        with c_r2:
+            st.subheader("Top 5 Products")
+            if 'top_products' in stats_aggs:
+                p_buckets = stats_aggs['top_products']['buckets']
+                if p_buckets:
+                    df_p = pd.DataFrame(p_buckets)
+                    fig_p = px.bar(
+                        df_p, x='doc_count', y='key', orientation='h',
+                        labels={'doc_count': 'Count', 'key': 'Product'},
+                        text='doc_count'
+                    )
+                    fig_p.update_traces(marker_color='#FF00FF', textposition='outside')
+                    fig_p.update_layout(
+                        template="plotly_dark",
+                        yaxis={'categoryorder':'total ascending'},
+                        plot_bgcolor='rgba(0,0,0,0)',
+                        paper_bgcolor='#262730',
+                        margin=dict(t=10, b=10, l=10, r=10)
+                    )
+                    st.plotly_chart(fig_p, use_container_width=True, theme=None)
+                else:
+                    st.info("No product data.")
+                    
+        with c_r3:
+            st.subheader("Status Breakdown")
+            if 'vuln_status_counts' in stats_aggs:
+                s_buckets = stats_aggs['vuln_status_counts']['buckets']
+                if s_buckets:
+                    df_s = pd.DataFrame(s_buckets)
+                    fig_s = px.pie(
+                        df_s, values='doc_count', names='key',
+                        color_discrete_sequence=px.colors.sequential.RdBu
+                    )
+                    fig_s.update_layout(
+                        template="plotly_dark",
+                        plot_bgcolor='rgba(0,0,0,0)',
+                        paper_bgcolor='#262730',
+                        margin=dict(t=10, b=10, l=10, r=10),
+                         legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5)
+                    )
+                    st.plotly_chart(fig_s, use_container_width=True, theme=None)
+                else:
+                    st.info("No status data.")
+
     # Function to parse nested timeline buckets
     def parse_nested_timeline(agg_data):
         rows = []
