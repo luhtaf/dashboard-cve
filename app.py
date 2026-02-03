@@ -140,7 +140,16 @@ with st.sidebar:
 
     # 2. Risk Scoring (Gauge/Slider)
     st.markdown("---")
-    st.markdown("**CVSS Score Range**")
+    st.markdown("**Risk Scoring**")
+    
+    cvss_version = st.multiselect(
+        "CVSS Version",
+        ["3.1", "3.0", "2.0"],
+        default=st.session_state.cvss_version_filter,
+        key="cvss_version_filter",
+        help="Filter by CVSS version availability"
+    )
+    
     score_val = st.slider(
         "CVSS Base Score",
         0.0, 10.0,
@@ -194,6 +203,7 @@ with st.sidebar:
         st.session_state.epss_range = (0.0, 1.0)
         st.session_state.vendor_filter = ""
         st.session_state.product_filter = ""
+        st.session_state.cvss_version_filter = []
         st.session_state.selected_year = "All"
         st.session_state.main_search = ""
 
@@ -210,7 +220,7 @@ def set_daily_filter(mode_type):
 
 # --- Data Loading ---
 @st.cache_data(ttl=600)
-def load_data(year, search, sev, date_val, d_field, score, kev, epss, vendor, product):
+def load_data(year, search, sev, date_val, d_field, score, kev, epss, vendor, product, cvss_ver):
     index = f"list-cve-{year}" if year != "All" else "list-cve-*"
     
     sev_arg = sev if sev else "All"
@@ -226,14 +236,15 @@ def load_data(year, search, sev, date_val, d_field, score, kev, epss, vendor, pr
             kev_filter=kev,
             epss_range=epss,
             vendor_filter=vendor if vendor else None,
-            product_filter=product if product else None
+            product_filter=product if product else None,
+            cvss_version_filter=cvss_ver if cvss_ver else None
         )
         return df, total_hits, None
     except Exception as e:
         return None, 0, str(e)
 
 @st.cache_data(ttl=600)
-def load_stats(year, d_field, search, sev, date_val, score, kev, epss, vendor, product):
+def load_stats(year, d_field, search, sev, date_val, score, kev, epss, vendor, product, cvss_ver):
     index = f"list-cve-{year}" if year != "All" else "list-cve-*"
     sev_arg = sev if sev else "All"
     try:
@@ -248,7 +259,8 @@ def load_stats(year, d_field, search, sev, date_val, score, kev, epss, vendor, p
             kev_filter=kev,
             epss_range=epss,
             vendor_filter=vendor if vendor else None,
-            product_filter=product if product else None
+            product_filter=product if product else None,
+            cvss_version_filter=cvss_ver if cvss_ver else None
         )
         return stats, None
     except Exception as e:
@@ -281,7 +293,8 @@ df_cves, total_cves, error_msg = load_data(
     st.session_state.kev_filter,
     st.session_state.epss_range,
     st.session_state.vendor_filter,
-    st.session_state.product_filter
+    st.session_state.product_filter,
+    st.session_state.cvss_version_filter
 )
 
 # Load Stats with same filters
@@ -295,7 +308,8 @@ stats_aggs, stats_error = load_stats(
     st.session_state.kev_filter,
     st.session_state.epss_range,
     st.session_state.vendor_filter,
-    st.session_state.product_filter
+    st.session_state.product_filter,
+    st.session_state.cvss_version_filter
 )
 new_today, mod_today = load_today_metrics()
 

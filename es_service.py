@@ -23,7 +23,7 @@ def get_es_client():
     )
     return client
 
-def _build_bool_query(search_text=None, severity_filter=None, date_filter=None, date_field="published", score_range=(0, 10), kev_filter=False, epss_range=(0, 1), vendor_filter=None, product_filter=None):
+def _build_bool_query(search_text=None, severity_filter=None, date_filter=None, date_field="published", score_range=(0, 10), kev_filter=False, epss_range=(0, 1), vendor_filter=None, product_filter=None, cvss_version_filter=None):
     query = {
         "bool": {
             "must": []
@@ -102,9 +102,6 @@ def _build_bool_query(search_text=None, severity_filter=None, date_filter=None, 
 
     # New Filters: Vendor and Product
     if vendor_filter:
-        # Assuming we want partial match or exact match on list. 
-        # Using match for broader search or term for exact. 
-        # Since user might type "Microsoft", match is safer.
         query["bool"]["must"].append({
             "match": {
                 "vendors": vendor_filter
@@ -117,15 +114,36 @@ def _build_bool_query(search_text=None, severity_filter=None, date_filter=None, 
                 "products": product_filter
             }
         })
+        
+    # CVSS Version Filter
+    if cvss_version_filter and len(cvss_version_filter) > 0:
+        # User selects: "3.1", "3.0", "2.0"
+        # Data has "source": "v31", "v30" (or v3), "v2"
+        mapped_versions = []
+        for v in cvss_version_filter:
+            if v == "3.1":
+                mapped_versions.append("v31")
+            elif v == "3.0":
+                mapped_versions.append("v30") # assuming standard mapping, or check if data uses 'v3'
+                mapped_versions.append("v3")  # covering both just in case
+            elif v == "2.0":
+                mapped_versions.append("v2")
+        
+        if mapped_versions:
+             query["bool"]["must"].append({
+                "terms": {
+                    "source.keyword": mapped_versions
+                }
+            })
 
     return query
 
-def fetch_cve_data(index_pattern="list-cve-*", size=1000, search_text=None, severity_filter=None, date_filter=None, date_field="published", score_range=(0, 10), kev_filter=False, epss_range=(0, 1), vendor_filter=None, product_filter=None):
+def fetch_cve_data(index_pattern="list-cve-*", size=1000, search_text=None, severity_filter=None, date_filter=None, date_field="published", score_range=(0, 10), kev_filter=False, epss_range=(0, 1), vendor_filter=None, product_filter=None, cvss_version_filter=None):
     client = get_es_client()
     
     query = _build_bool_query(
         search_text, severity_filter, date_filter, date_field, 
-        score_range, kev_filter, epss_range, vendor_filter, product_filter
+        score_range, kev_filter, epss_range, vendor_filter, product_filter, cvss_version_filter
     )
     
     response = client.search(
@@ -149,7 +167,7 @@ def fetch_cve_data(index_pattern="list-cve-*", size=1000, search_text=None, seve
         
     return pd.DataFrame(data), response['hits']['total']['value']
 
-def fetch_summary_stats(index_pattern="list-cve-*", date_field="published", search_text=None, severity_filter=None, date_filter=None, score_range=(0, 10), kev_filter=False, epss_range=(0, 1), vendor_filter=None, product_filter=None):
+def fetch_summary_stats(index_pattern="list-cve-*", date_field="published", search_text=None, severity_filter=None, date_filter=None, score_range=(0, 10), kev_filter=False, epss_range=(0, 1), vendor_filter=None, product_filter=None, cvss_version_filter=None):
     """
     Fetches aggregations for charts WITH respecting all filters.
     """
@@ -158,7 +176,7 @@ def fetch_summary_stats(index_pattern="list-cve-*", date_field="published", sear
     # Reuse the same query logic so stats match the table
     query = _build_bool_query(
         search_text, severity_filter, date_filter, date_field, 
-        score_range, kev_filter, epss_range, vendor_filter, product_filter
+        score_range, kev_filter, epss_range, vendor_filter, product_filter, cvss_version_filter
     )
     
     aggs_query = {
