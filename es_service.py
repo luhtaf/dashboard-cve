@@ -197,6 +197,8 @@ def fetch_summary_stats(index_pattern="list-cve-*", date_field="published", sear
                         "date_histogram": {
                             "field": date_field,
                             "calendar_interval": "year",
+                            "format": "yyyy"
+                        }
                     }
                 }
             },
