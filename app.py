@@ -138,14 +138,16 @@ with st.sidebar:
     
     # Vulnerability Status Filter
     status_options = ["Received", "Awaiting Analysis", "Analyzed", "Modified", "Deferred", "Rejected"]
-    status_select = st.multiselect(
+    # Vulnerability Status Filter
+    status_options = ["Received", "Awaiting Analysis", "Analyzed", "Modified", "Deferred", "Rejected"]
+    st.multiselect(
         "Vulnerability Status",
         options=status_options,
-        default=st.session_state.status_filter,
-        key="status_filter_widget"
+        key="status_filter"
     )
-    st.session_state.status_filter = status_select
     
+    # Mode Selection (Simplified)
+
     # Mode Selection (Simplified)
     filter_mode = st.radio(
         "Observation Mode",
@@ -278,6 +280,7 @@ with st.sidebar:
         st.session_state.vendor_filter = ""
         st.session_state.product_filter = ""
         st.session_state.cvss_version_filter = []
+        st.session_state.status_filter = []
         st.session_state.selected_year = "All"
         st.session_state.main_search = ""
 
@@ -319,10 +322,15 @@ def load_data(year, search, sev, date_val, d_field, score, kev, epss, vendor, pr
         if st.session_state.timezone_mode == "WIB":
             # Convert published and lastModified to WIB
             if not df.empty:
-                if 'published' in df.columns:
-                    df['published'] = pd.to_datetime(df['published']).dt.tz_convert('Asia/Jakarta')
-                if 'lastModified' in df.columns:
-                    df['lastModified'] = pd.to_datetime(df['lastModified']).dt.tz_convert('Asia/Jakarta')
+                try:
+                    if 'published' in df.columns:
+                        # Ensure UTC first
+                        df['published'] = pd.to_datetime(df['published'], utc=True).dt.tz_convert('Asia/Jakarta')
+                    if 'lastModified' in df.columns:
+                        df['lastModified'] = pd.to_datetime(df['lastModified'], utc=True).dt.tz_convert('Asia/Jakarta')
+                except Exception as e:
+                    # Fallback or log if conversion fails (e.g. mixed types)
+                    pass
 
         return df, total_hits, None
     except Exception as e:
