@@ -110,11 +110,42 @@ with st.sidebar:
         </div>
         """, unsafe_allow_html=True
     )
-    st.markdown("---")
+if 'status_filter' not in st.session_state:
+    st.session_state.status_filter = []
+if 'timezone_mode' not in st.session_state:
+    st.session_state.timezone_mode = "UTC"
+
+# --- Sidebar ---
+with st.sidebar:
+    # ... logo code ...
     
+    st.markdown("---")
     st.subheader("Filter Configurations")
     
-    # Mode Selection (Simplified)
+    # Timezone Control
+    timezone_choice = st.radio(
+        "Timezone Display",
+        ["UTC", "WIB (UTC+7)"],
+        horizontal=True,
+        index=0 if st.session_state.timezone_mode == "UTC" else 1
+    )
+    if timezone_choice == "UTC":
+        st.session_state.timezone_mode = "UTC"
+    else:
+        st.session_state.timezone_mode = "WIB"
+        
+    st.markdown("---")
+    
+    # Vulnerability Status Filter
+    status_options = ["Received", "Awaiting Analysis", "Analyzed", "Modified", "Deferred", "Rejected"]
+    status_select = st.multiselect(
+        "Vulnerability Status",
+        options=status_options,
+        default=st.session_state.status_filter,
+        key="status_filter_widget"
+    )
+    st.session_state.status_filter = status_select
+    
     # Mode Selection (Simplified)
     filter_mode = st.radio(
         "Observation Mode",
@@ -263,7 +294,7 @@ def set_daily_filter(mode_type):
 
 # --- Data Loading ---
 @st.cache_data(ttl=600)
-def load_data(year, search, sev, date_val, d_field, score, kev, epss, vendor, product, cvss_ver):
+def load_data(year, search, sev, date_val, d_field, score, kev, epss, vendor, product, cvss_ver, status_flt):
     index = f"list-cve-{year}" if year != "All" else "list-cve-*"
     
     sev_arg = sev if sev else "All"
@@ -280,14 +311,25 @@ def load_data(year, search, sev, date_val, d_field, score, kev, epss, vendor, pr
             epss_range=epss,
             vendor_filter=vendor if vendor else None,
             product_filter=product if product else None,
-            cvss_version_filter=cvss_ver if cvss_ver else None
+            cvss_version_filter=cvss_ver if cvss_ver else None,
+            status_filter=status_flt if status_flt else None
         )
+        
+        # Timezone Conversion for Display
+        if st.session_state.timezone_mode == "WIB":
+            # Convert published and lastModified to WIB
+            if not df.empty:
+                if 'published' in df.columns:
+                    df['published'] = pd.to_datetime(df['published']).dt.tz_convert('Asia/Jakarta')
+                if 'lastModified' in df.columns:
+                    df['lastModified'] = pd.to_datetime(df['lastModified']).dt.tz_convert('Asia/Jakarta')
+
         return df, total_hits, None
     except Exception as e:
         return None, 0, str(e)
 
 @st.cache_data(ttl=600)
-def load_stats(year, d_field, search, sev, date_val, score, kev, epss, vendor, product, cvss_ver):
+def load_stats(year, d_field, search, sev, date_val, score, kev, epss, vendor, product, cvss_ver, status_flt):
     index = f"list-cve-{year}" if year != "All" else "list-cve-*"
     sev_arg = sev if sev else "All"
     try:
@@ -303,7 +345,8 @@ def load_stats(year, d_field, search, sev, date_val, score, kev, epss, vendor, p
             epss_range=epss,
             vendor_filter=vendor if vendor else None,
             product_filter=product if product else None,
-            cvss_version_filter=cvss_ver if cvss_ver else None
+            cvss_version_filter=cvss_ver if cvss_ver else None,
+            status_filter=status_flt if status_flt else None
         )
         return stats, None
     except Exception as e:
@@ -323,7 +366,7 @@ def load_today_metrics():
 # --- Main Content ---
 
 # Compact Header with Context
-c_header, c_ctx = st.columns([3, 1])
+c_header, c_ctx = st.columns([5, 2])
 with c_header:
     st.title("Vulnerability Intelligence Center")
     st.caption("Real-time operational dashboard for CVE tracking and analysis.")
@@ -367,7 +410,8 @@ df_cves, total_cves, error_msg = load_data(
     st.session_state.epss_range,
     st.session_state.vendor_filter,
     st.session_state.product_filter,
-    st.session_state.cvss_version_filter
+    st.session_state.cvss_version_filter,
+    st.session_state.status_filter
 )
 
 # Load Stats with same filters
@@ -382,7 +426,8 @@ stats_aggs, stats_error = load_stats(
     st.session_state.epss_range,
     st.session_state.vendor_filter,
     st.session_state.product_filter,
-    st.session_state.cvss_version_filter
+    st.session_state.cvss_version_filter,
+    st.session_state.status_filter
 )
 new_today, mod_today = load_today_metrics()
 
@@ -567,7 +612,30 @@ if stats_aggs:
                         pass
             else:
                 st.info("No severity data available.")
-
+                
+            st.divider()
+            st.subheader("Status Distribution")
+            if 'vuln_status_counts' in stats_aggs:
+                stat_buckets = stats_aggs['vuln_status_counts']['buckets']
+                if stat_buckets:
+                    df_stat = pd.DataFrame(stat_buckets)
+                    fig_stat = px.pie(
+                        df_stat, 
+                        values='doc_count', 
+                        names='key',
+                        hole=0.4
+                    )
+                    fig_stat.update_layout(
+                        template="plotly_dark", 
+                        showlegend=False,
+                        plot_bgcolor='rgba(0,0,0,0)',
+                        paper_bgcolor='#262730',
+                        margin=dict(t=0, b=0, l=0, r=0)
+                    )
+                    st.plotly_chart(fig_stat, use_container_width=True)
+                else:
+                    st.info("No status data available.")
+        
         with c2:
             st.subheader("General Activity Trend")
             overview_buckets = stats_aggs['activity_over_time']['buckets']
@@ -833,7 +901,7 @@ st.subheader("Detailed CVE List")
 
 if not df_cves.empty:
     # Select columns to display
-    cols_to_show = ['id', 'sev', 'score', 'published', 'vendors', 'products', 'desc']
+    cols_to_show = ['id', 'sev', 'vulnStatus', 'score', 'published', 'vendors', 'products', 'desc']
     # Check which columns actually exist
     available_cols = [c for c in cols_to_show if c in df_cves.columns]
     

@@ -23,7 +23,7 @@ def get_es_client():
     )
     return client
 
-def _build_bool_query(search_text=None, severity_filter=None, date_filter=None, date_field="published", score_range=(0, 10), kev_filter=False, epss_range=(0, 1), vendor_filter=None, product_filter=None, cvss_version_filter=None):
+def _build_bool_query(search_text=None, severity_filter=None, date_filter=None, date_field="published", score_range=(0, 10), kev_filter=False, epss_range=(0, 1), vendor_filter=None, product_filter=None, cvss_version_filter=None, status_filter=None):
     query = {
         "bool": {
             "must": []
@@ -52,6 +52,13 @@ def _build_bool_query(search_text=None, severity_filter=None, date_filter=None, 
                     "sev.keyword": severity_filter
                 }
             })
+            
+    if status_filter and len(status_filter) > 0:
+        query["bool"]["must"].append({
+            "terms": {
+                "vulnStatus.keyword": status_filter
+            }
+        })
 
     if date_filter:
         start_date = date_filter
@@ -142,12 +149,12 @@ def _build_bool_query(search_text=None, severity_filter=None, date_filter=None, 
 
     return query
 
-def fetch_cve_data(index_pattern="list-cve-*", size=1000, search_text=None, severity_filter=None, date_filter=None, date_field="published", score_range=(0, 10), kev_filter=False, epss_range=(0, 1), vendor_filter=None, product_filter=None, cvss_version_filter=None):
+def fetch_cve_data(index_pattern="list-cve-*", size=1000, search_text=None, severity_filter=None, date_filter=None, date_field="published", score_range=(0, 10), kev_filter=False, epss_range=(0, 1), vendor_filter=None, product_filter=None, cvss_version_filter=None, status_filter=None):
     client = get_es_client()
     
     query = _build_bool_query(
         search_text, severity_filter, date_filter, date_field, 
-        score_range, kev_filter, epss_range, vendor_filter, product_filter, cvss_version_filter
+        score_range, kev_filter, epss_range, vendor_filter, product_filter, cvss_version_filter, status_filter
     )
     
     response = client.search(
@@ -171,7 +178,7 @@ def fetch_cve_data(index_pattern="list-cve-*", size=1000, search_text=None, seve
         
     return pd.DataFrame(data), response['hits']['total']['value']
 
-def fetch_summary_stats(index_pattern="list-cve-*", date_field="published", search_text=None, severity_filter=None, date_filter=None, score_range=(0, 10), kev_filter=False, epss_range=(0, 1), vendor_filter=None, product_filter=None, cvss_version_filter=None):
+def fetch_summary_stats(index_pattern="list-cve-*", date_field="published", search_text=None, severity_filter=None, date_filter=None, score_range=(0, 10), kev_filter=False, epss_range=(0, 1), vendor_filter=None, product_filter=None, cvss_version_filter=None, status_filter=None):
     """
     Fetches aggregations for charts WITH respecting all filters.
     """
@@ -180,7 +187,7 @@ def fetch_summary_stats(index_pattern="list-cve-*", date_field="published", sear
     # Reuse the same query logic so stats match the table
     query = _build_bool_query(
         search_text, severity_filter, date_filter, date_field, 
-        score_range, kev_filter, epss_range, vendor_filter, product_filter, cvss_version_filter
+        score_range, kev_filter, epss_range, vendor_filter, product_filter, cvss_version_filter, status_filter
     )
     
     # Determine sensible interval for sparklines/trends
