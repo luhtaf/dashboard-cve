@@ -8,6 +8,8 @@ import es_service
 importlib.reload(es_service)
 from es_service import fetch_cve_data, fetch_summary_stats
 
+ES_INDEX = "list-cve"
+
 # --- Page Config ---
 try:
     favicon = Image.open("logo_bssn.png")
@@ -256,17 +258,19 @@ with st.sidebar:
     
     st.markdown("---")
     
-    # Year Selector
     year_options = ["All"] + [str(y) for y in range(1999, 2026)]
     if st.session_state.selected_year not in year_options:
          st.session_state.selected_year = "All"
-         
+
     selected_year = st.selectbox(
-        "Index Year",
+        "Year Filter",
         year_options,
         index=year_options.index(st.session_state.selected_year),
-        key="selected_year"
+        key="selected_year",
+        help="Filter documents by year on the selected date field without changing the Elasticsearch index"
     )
+
+    st.caption(f"Elasticsearch index: {ES_INDEX}")
     
     search_term = st.text_input("Search", placeholder="CVE-ID or Description...", key="main_search")
     
@@ -298,7 +302,7 @@ def set_daily_filter(mode_type):
 # --- Data Loading ---
 @st.cache_data(ttl=600)
 def load_data(year, search, sev, date_val, d_field, score, kev, epss, vendor, product, cvss_ver, status_flt):
-    index = f"list-cve-{year}" if year != "All" else "list-cve-*"
+    index = ES_INDEX
     
     sev_arg = sev if sev else "All"
     
@@ -315,7 +319,8 @@ def load_data(year, search, sev, date_val, d_field, score, kev, epss, vendor, pr
             vendor_filter=vendor if vendor else None,
             product_filter=product if product else None,
             cvss_version_filter=cvss_ver if cvss_ver else None,
-            status_filter=status_flt if status_flt else None
+            status_filter=status_flt if status_flt else None,
+            year_filter=year if year != "All" else None
         )
         
         # Timezone Conversion for Display
@@ -338,7 +343,7 @@ def load_data(year, search, sev, date_val, d_field, score, kev, epss, vendor, pr
 
 @st.cache_data(ttl=600)
 def load_stats(year, d_field, search, sev, date_val, score, kev, epss, vendor, product, cvss_ver, status_flt):
-    index = f"list-cve-{year}" if year != "All" else "list-cve-*"
+    index = ES_INDEX
     sev_arg = sev if sev else "All"
     try:
         # Now passing all filters to stats too!
@@ -354,7 +359,8 @@ def load_stats(year, d_field, search, sev, date_val, score, kev, epss, vendor, p
             vendor_filter=vendor if vendor else None,
             product_filter=product if product else None,
             cvss_version_filter=cvss_ver if cvss_ver else None,
-            status_filter=status_flt if status_flt else None
+            status_filter=status_flt if status_flt else None,
+            year_filter=year if year != "All" else None
         )
         return stats, None
     except Exception as e:
