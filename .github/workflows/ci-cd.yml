@@ -46,8 +46,8 @@ jobs:
 
       - name: Lint GitHub Actions workflow
         run: |
-          curl -sSL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash | bash
-          ./actionlint -color -oneline .github/workflows/*.yml
+          docker run --rm -v "$PWD":/workdir rhysd/actionlint:latest \
+            -color -oneline .github/workflows/*.yml
 
       - name: Trivy scan (SARIF)
         uses: aquasecurity/trivy-action@0.24.0
