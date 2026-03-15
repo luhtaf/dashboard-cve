@@ -5,7 +5,10 @@ on:
     branches:
       - main
       - master
+    tags:
+      - "v*"
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -18,13 +21,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        env:
-          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
-      - name: Setup Python
+      - name: Set up Python
         uses: actions/setup-python@v5
-        env:
-          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
         with:
           python-version: "3.12"
 
@@ -34,13 +33,13 @@ jobs:
           pip install -r requirements.txt
           pip install ruff
 
-      - name: Syntax check
-        run: python -m py_compile app.py es_service.py
+      - name: Python syntax check
+        run: python -m compileall -q .
 
       - name: Lint Python (critical rules)
         run: ruff check --select E9,F63,F7,F82 app.py es_service.py
 
-      - name: Lint Dockerfile
+      - name: Lint Dockerfile (hadolint)
         uses: hadolint/hadolint-action@v3.1.0
         with:
           dockerfile: Dockerfile
@@ -48,93 +47,140 @@ jobs:
       - name: Lint GitHub Actions workflow
         uses: raven-actions/actionlint@v2
 
-      - name: Install Trivy
-        run: curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
+      - name: Trivy scan (SARIF)
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: sarif
+          output: trivy-results.sarif
+          ignore-unfixed: true
+          vuln-type: os,library
+          scanners: vuln,misconfig,secret
+          severity: HIGH,CRITICAL
+          exit-code: "0"
 
-      - name: Security scan (Trivy) - generate SARIF report
-        run: trivy fs --scanners vuln,secret,misconfig --severity HIGH,CRITICAL --ignore-unfixed --format sarif --output trivy-results.sarif . || true
-
-      - name: Upload Trivy scan results to GitHub Security
-        if: always()
+      - name: Upload Trivy SARIF to GitHub Security
+        if: ${{ always() && hashFiles('trivy-results.sarif') != '' }}
         uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: trivy-results.sarif
-        env:
-          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
-      - name: Security scan (Trivy) - gate on vulnerabilities
-        run: trivy fs --scanners vuln,secret,misconfig --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 --format table .
+      - name: Trivy scan gate (HIGH/CRITICAL)
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: table
+          ignore-unfixed: true
+          vuln-type: os,library
+          scanners: vuln,misconfig,secret
+          severity: HIGH,CRITICAL
+          exit-code: "1"
 
   build-and-push:
-    if: github.event_name == 'push'
+    if: github.event_name != 'pull_request'
     needs: validate
     runs-on: ubuntu-latest
     outputs:
-      app_name: ${{ steps.image_meta.outputs.app_name }}
-      image_ref: ${{ steps.image_meta.outputs.image_ref }}
-      version: ${{ steps.image_meta.outputs.version }}
+      app_name: ${{ steps.vars.outputs.app_name }}
+      image_ref: ${{ steps.vars.outputs.image_ref }}
+      version: ${{ steps.vars.outputs.version }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        env:
-          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
-      - name: Set image metadata
-        id: image_meta
+      - name: Set image variables
+        id: vars
         run: |
           if [ ! -f VERSION ]; then
             echo "VERSION file not found"
             exit 1
           fi
 
-          VERSION="$(tr -d '[:space:]' < VERSION)"
+          VERSION_VALUE="$(tr -d '[:space:]' < VERSION)"
 
-          if [ -z "${VERSION}" ]; then
+          if [ -z "${VERSION_VALUE}" ]; then
             echo "VERSION file is empty"
             exit 1
           fi
 
-          APP_NAME="${GITHUB_REPOSITORY##*/}"
           IMAGE_REPO="ghcr.io/${GITHUB_REPOSITORY,,}"
-          IMAGE_REF="${IMAGE_REPO}:${VERSION}"
-          LATEST_REF="${IMAGE_REPO}:latest"
+          IMAGE_REF="${IMAGE_REPO}:${VERSION_VALUE}"
+          APP_NAME="${GITHUB_REPOSITORY##*/}"
 
-          {
-            echo "app_name=${APP_NAME}"
-            echo "image_ref=${IMAGE_REF}"
-            echo "version=${VERSION}"
-            echo "latest_ref=${LATEST_REF}"
-          } >> "$GITHUB_OUTPUT"
-
-      - name: Install Trivy
-        run: curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
+          echo "image_ref=${IMAGE_REF}" >> "$GITHUB_OUTPUT"
+          echo "app_name=${APP_NAME}" >> "$GITHUB_OUTPUT"
+          echo "version=${VERSION_VALUE}" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Login to GHCR
+      - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push image
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=${{ steps.vars.outputs.version }}
+
+      - name: Build image (local, pre-scan)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: ${{ steps.vars.outputs.image_ref }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Trivy image scan (SARIF)
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          scan-type: image
+          image-ref: ${{ steps.vars.outputs.image_ref }}
+          format: sarif
+          output: trivy-image-results.sarif
+          ignore-unfixed: true
+          vuln-type: os,library
+          severity: HIGH,CRITICAL
+          exit-code: "0"
+
+      - name: Upload Trivy image SARIF to GitHub Security
+        if: ${{ always() && hashFiles('trivy-image-results.sarif') != '' }}
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-image-results.sarif
+          category: trivy-image
+
+      - name: Trivy image scan gate (HIGH/CRITICAL)
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          scan-type: image
+          image-ref: ${{ steps.vars.outputs.image_ref }}
+          format: table
+          ignore-unfixed: true
+          vuln-type: os,library
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+
+      - name: Push image
         uses: docker/build-push-action@v6
         with:
           context: .
           push: true
-          tags: |
-            ${{ steps.image_meta.outputs.image_ref }}
-            ${{ steps.image_meta.outputs.latest_ref }}
-
-      - name: Security scan (Trivy) - image scan
-        run: |
-          docker pull ${{ steps.image_meta.outputs.image_ref }}
-          trivy image --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 --format table ${{ steps.image_meta.outputs.image_ref }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
 
   update-manifest:
-    if: github.event_name == 'push'
+    if: github.event_name != 'pull_request'
     needs: build-and-push
     runs-on: ubuntu-latest
     env:
@@ -147,8 +193,6 @@ jobs:
       - name: Checkout manifest repo
         if: ${{ env.MANIFEST_REPO_TOKEN != '' }}
         uses: actions/checkout@v4
-        env:
-          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
         with:
           repository: HuntingYuk/k3s-manifest
           token: ${{ env.MANIFEST_REPO_TOKEN }}
@@ -156,9 +200,6 @@ jobs:
 
       - name: Update deployment image tag
         if: ${{ env.MANIFEST_REPO_TOKEN != '' }}
-        env:
-          APP_NAME: ${{ needs.build-and-push.outputs.app_name }}
-          IMAGE_REF: ${{ needs.build-and-push.outputs.image_ref }}
         run: |
           TARGET_DIR="manifest-repo/projects/${APP_NAME}"
           DEPLOY_FILE="${TARGET_DIR}/deployment.yaml"
@@ -175,22 +216,23 @@ jobs:
 
           sed -E "s|^([[:space:]]*image:[[:space:]]*).*$|\\1${IMAGE_REF}|" "${DEPLOY_FILE}" > "${DEPLOY_FILE}.tmp"
           mv "${DEPLOY_FILE}.tmp" "${DEPLOY_FILE}"
-
-      - name: Commit and push manifest updates
-        if: ${{ env.MANIFEST_REPO_TOKEN != '' }}
         env:
           APP_NAME: ${{ needs.build-and-push.outputs.app_name }}
           IMAGE_REF: ${{ needs.build-and-push.outputs.image_ref }}
+
+      - name: Commit and push manifest updates
+        if: ${{ env.MANIFEST_REPO_TOKEN != '' }}
         run: |
           cd manifest-repo
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add projects
-
           if git diff --cached --quiet; then
             echo "No manifest changes detected"
             exit 0
           fi
-
           git commit -m "Update ${APP_NAME} deployment image to ${IMAGE_REF}"
           git push
+        env:
+          APP_NAME: ${{ needs.build-and-push.outputs.app_name }}
+          IMAGE_REF: ${{ needs.build-and-push.outputs.image_ref }}
