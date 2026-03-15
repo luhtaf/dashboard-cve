@@ -1,0 +1,179 @@
+name: CI-CD
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+
+permissions:
+  contents: read
+  packages: write
+  security-events: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install ruff
+
+      - name: Syntax check
+        run: python -m py_compile app.py es_service.py
+
+      - name: Lint Python (critical rules)
+        run: ruff check --select E9,F63,F7,F82 app.py es_service.py
+
+      - name: Lint Dockerfile
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: Dockerfile
+
+      - name: Lint GitHub Actions workflow
+        uses: raven-actions/actionlint@v2
+
+      - name: Security scan (Trivy)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,secret,misconfig
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+          format: sarif
+          output: trivy-results.sarif
+
+      - name: Upload Trivy scan results to GitHub Security
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-results.sarif
+
+  build-and-push:
+    if: github.event_name == 'push'
+    needs: validate
+    runs-on: ubuntu-latest
+    outputs:
+      app_name: ${{ steps.image_meta.outputs.app_name }}
+      image_ref: ${{ steps.image_meta.outputs.image_ref }}
+      version: ${{ steps.image_meta.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set image metadata
+        id: image_meta
+        run: |
+          if [ ! -f VERSION ]; then
+            echo "VERSION file not found"
+            exit 1
+          fi
+
+          VERSION="$(tr -d '[:space:]' < VERSION)"
+
+          if [ -z "${VERSION}" ]; then
+            echo "VERSION file is empty"
+            exit 1
+          fi
+
+          APP_NAME="${GITHUB_REPOSITORY##*/}"
+          IMAGE_REPO="ghcr.io/${GITHUB_REPOSITORY,,}"
+          IMAGE_REF="${IMAGE_REPO}:${VERSION}"
+          LATEST_REF="${IMAGE_REPO}:latest"
+
+          echo "app_name=${APP_NAME}" >> "$GITHUB_OUTPUT"
+          echo "image_ref=${IMAGE_REF}" >> "$GITHUB_OUTPUT"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "latest_ref=${LATEST_REF}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ steps.image_meta.outputs.image_ref }}
+            ${{ steps.image_meta.outputs.latest_ref }}
+
+  update-manifest:
+    if: github.event_name == 'push'
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    env:
+      MANIFEST_REPO_TOKEN: ${{ secrets.MANIFEST_REPO_TOKEN }}
+    steps:
+      - name: Skip manifest update when token is unavailable
+        if: ${{ env.MANIFEST_REPO_TOKEN == '' }}
+        run: echo "MANIFEST_REPO_TOKEN is not set. Skipping manifest update job."
+
+      - name: Checkout manifest repo
+        if: ${{ env.MANIFEST_REPO_TOKEN != '' }}
+        uses: actions/checkout@v4
+        with:
+          repository: HuntingYuk/k3s-manifest
+          token: ${{ env.MANIFEST_REPO_TOKEN }}
+          path: manifest-repo
+
+      - name: Update deployment image tag
+        if: ${{ env.MANIFEST_REPO_TOKEN != '' }}
+        env:
+          APP_NAME: ${{ needs.build-and-push.outputs.app_name }}
+          IMAGE_REF: ${{ needs.build-and-push.outputs.image_ref }}
+        run: |
+          TARGET_DIR="manifest-repo/projects/${APP_NAME}"
+          DEPLOY_FILE="${TARGET_DIR}/deployment.yaml"
+
+          if [ ! -f "${DEPLOY_FILE}" ]; then
+            echo "deployment file not found: ${DEPLOY_FILE}"
+            exit 1
+          fi
+
+          if ! grep -Eq '^\s*image:\s*' "${DEPLOY_FILE}"; then
+            echo "image field not found in ${DEPLOY_FILE}"
+            exit 1
+          fi
+
+          sed -E "s|^([[:space:]]*image:[[:space:]]*).*$|\\1${IMAGE_REF}|" "${DEPLOY_FILE}" > "${DEPLOY_FILE}.tmp"
+          mv "${DEPLOY_FILE}.tmp" "${DEPLOY_FILE}"
+
+      - name: Commit and push manifest updates
+        if: ${{ env.MANIFEST_REPO_TOKEN != '' }}
+        env:
+          APP_NAME: ${{ needs.build-and-push.outputs.app_name }}
+          IMAGE_REF: ${{ needs.build-and-push.outputs.image_ref }}
+        run: |
+          cd manifest-repo
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add projects
+
+          if git diff --cached --quiet; then
+            echo "No manifest changes detected"
+            exit 0
+          fi
+
+          git commit -m "Update ${APP_NAME} deployment image to ${IMAGE_REF}"
+          git push

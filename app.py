@@ -3,12 +3,19 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import importlib
+from pathlib import Path
 from PIL import Image
 import es_service
 importlib.reload(es_service)
 from es_service import fetch_cve_data, fetch_summary_stats
 
 ES_INDEX = "list-cve"
+VERSION_FILE = Path(__file__).resolve().parent / "VERSION"
+
+try:
+    APP_VERSION = VERSION_FILE.read_text(encoding="utf-8").strip() or "unknown"
+except Exception:
+    APP_VERSION = "unknown"
 
 # --- Page Config ---
 try:
@@ -939,4 +946,7 @@ if not df_cves.empty:
         st.json(df_cves.head().to_dict(orient='records'))
 else:
     st.info("No CVEs found matching your criteria.")
+
+st.markdown("---")
+st.caption(f"Version: {APP_VERSION}")
 
